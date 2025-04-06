@@ -15,3 +15,7 @@ class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
         fields = ['name', 'status', 'project', 'task_start_date', 'task_end_date', 'assigned_to']
+
+class CSVUploadForm(forms.Form):
+    class Meta:
+        csv_files = forms.FileField()
