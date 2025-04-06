@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from . models import Client, Project, Task
 from django.contrib.auth.decorators import login_required, permission_required
-from .forms import ClientForm, ProjectForm, TaskForm
+from .forms import ClientForm, ProjectForm, TaskForm, CSVUploadForm
 from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login, logout
@@ -10,7 +10,9 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.http import JsonResponse
 import csv
-from datetime import datetime 
+from datetime import datetime
+import logging
+logger = logging.getLogger(__name__)
 
 
 def index(request):
@@ -49,11 +51,12 @@ def project_detail(request, pk):
 @login_required
 def project_create(request):
     if request.method == 'POST':
-        form = ProjectForm(request.POST)
+        form = ProjectForm(request.POST, request.FILES)
         if form.is_valid():
             project = form.save(commit=False)
             project.client = request.user.client
             project.save()
+            print("Files recieved: ", request.FILES)
             return redirect('project_list')
     else:
         form = ProjectForm()
@@ -166,52 +169,66 @@ def task_delete(request, task_id):
 @login_required
 def upload_tasks_csv(request):
     if request.method == 'POST':
-        csv_file = request.FILES['csv_file']
-        if not csv_file.name.endswith('.csv'):
-            messages.error(request, 'This is not a CSV file.')
-            return redirect('task_list')
+        form = CSVUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = request.FILES['csv_file']
 
-        # Decode file to handle different file encodings
-        file_data = csv_file.read().decode('utf-8').splitlines()
+            # ✅ Move this OUTSIDE the 'if not ...' block
+            if not csv_file.name.endswith('.csv'):
+                messages.error(request, 'This is not a CSV file.')
+                return redirect('task_list')
 
-        reader = csv.reader(file_data)
-        # Skip the header row if your CSV file has one
-        next(reader)
-
-        for row in reader:
-            # Assuming CSV columns are: task_name, status, start_date, end_date, assigned_to_email, project_id
             try:
-                task_name, date_created,status, project_id, assigned_to_id, task_start_date, task_end_date = row
+                file_data = csv_file.read().decode('utf-8').splitlines()
+            except UnicodeDecodeError:
+                file_data = csv_file.read().decode('iso-8859-1').splitlines()
 
-                # Fetch the Project object
-                project = Project.objects.get(id=project_id)
-                assigned_to_user = User.objects.get(email=assigned_to_email)
-                
-                date_created = datetime.strptime(date_created, "%Y-%m-%d").date()
-                task_start_date = datetime.strptime(task_start_date, "%Y-%m-%d").date()
-                task_end_date = datetime.strptime(task_end_date, "%Y-%m-%d").date()
+            reader = csv.reader(file_data)
+            next(reader)  # Skip header
 
-                # Create the Task object
-                Task.objects.create(
+            first_project_id = None
 
-                    name=task_name,
-                    date_created=date_created,
-                    status=status,
-                    project=project,
-                    assigned_to_id=assigned_to_id,
-                    start_date=task_start_date,
-                    end_date=task_end_date,
-                    
-                    
-                )
-            except Exception as e:
-                messages.error(request, f"Error processing row {row}: {e}")
-                continue
+            for row in reader:
+                try:
+                    # Columns: id, project_id, name, date_created, task_start_date, task_end_date, status, assigned_to_id
+                    _, project_id, task_name, date_created, task_start_date, task_end_date, status, assigned_to_id = row
 
-        messages.success(request, "Tasks have been uploaded successfully.")
-        return redirect('task_list')
+                    project = Project.objects.get(id=int(project_id))
+
+                    if first_project_id is None:
+                        first_project_id = int(project_id)
+
+                    task = Task.objects.create(
+                        name=task_name,
+                        status=int(status),
+                        project=project,
+                        assigned_to_id=int(assigned_to_id),
+                        task_start_date=datetime.strptime(task_start_date, "%d-%m-%Y").date(),
+                        task_end_date=datetime.strptime(task_end_date, "%d-%m-%Y").date(),
+                    )
+
+                    # Manually set date_created if needed
+                    task.date_created = datetime.strptime(date_created, "%d-%m-%Y").date()
+                    task.save()
+
+                except Exception as e:
+                    messages.error(request, f"Error processing row {row}: {e}")
+                    logger.exception(f"Error processing row {row}: {e}")
+
+                    continue
+
+            messages.success(request, "Tasks have been uploaded successfully.")
+            logger.exception("Tasks have been uploaded successfully.")
+            if first_project_id:
+                return redirect(f'/project/{first_project_id}/tasks/')
+            else:
+
+                return redirect('task_list')
     else:
-        return redirect('task_list')
+        form = CSVUploadForm()
+
+    return redirect(request, 'task_list', {'form', form} )
+
 
 
 

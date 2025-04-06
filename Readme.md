@@ -56,11 +56,11 @@ python manage.py createsuperuser
 Run the server:
 
 python manage.py runserver
-Visit http://127.0.0.1:8000 to access the application.
+
 
 🚀 Usage
 1. Access the Admin Panel
-Go to http://127.0.0.1:8000/admin and log in with your superuser credentials.
+Go to admin panel and log in with your superuser credentials.
 Manage users, projects, and tasks from the admin interface.
 
 2. Project and Task Management
