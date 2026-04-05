@@ -17,7 +17,7 @@
                 method: 'POST',
                 body: formData,
                 headers: {
-                'X-CSRFToken': getCookie('csrf_token'),
+                'X-CSRFToken': getCookie('csrftoken'),
             }
             })
             .then(response => {

@@ -1,91 +1,74 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-    background-color: #f4f4f4;
-}
 
-header {
-    background-color: #333;
-    color: #fff;
-    padding: 10px 0;
-    text-align: center;
+.task-status { /* In your CSS file */
+    padding: 5px;
+    border-radius: 5px;
+    width: fit-content;
 }
+.task-status.not-started { background-color: rgb(236, 111, 111); }
+.task-status.in-progress { background-color: rgb(236, 236, 142); }
+.task-status.completed { background-color: lightgreen; }
+/* ... other status styles ... */
+/* style.css */
 
-nav {
-    background-color: #eee;
-    padding: 10px;
-}
-
-nav ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-nav li {
-    display: inline-block;
-    margin-right: 20px;
-}
-
-nav a {
-    text-decoration: none;
-    color: #333;
-}
-
-main {
-    padding: 20px;
-}
-
-footer {
-    background-color: #333;
-    color: #fff;
-    padding: 10px 0;
-    text-align: center;
-    position: fixed;
-    bottom: 0;
+/* Basic Table Styling */
+.container table {
     width: 100%;
-}
-
-.container {
-    width: 80%;
-    margin: 0 auto;
-}
-
-.button {
-    background-color: #4CAF50;
-    border: none;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  
+  .container th, 
+  .container td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+  }
+  
+  /* Header Styling */
+  .container th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+  }
+  
+  /* Striped Rows */
+  .container tr:nth-child(even) {
+    background-color: #f9f9f9;
+  }
+  
+  /* Task Status Styling */
+  .task-status {
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-weight: bold;
+  }
+  
+  .task-status.not-started {
+    background-color: lightgray;
+    color: #666;
+  }
+  
+  .task-status.in-progress {
+    background-color: lightyellow;
+    color: #8a6d3b;
+  }
+  
+  .task-status.completed {
+    background-color: lightgreen;
+    color: #3c763d;
+  }
+  
+  /* Add New Task Button */
+  .btn-primary {
+    background-color: yellowgreen;
     color: white;
+    border: none;
     padding: 10px 20px;
-    text-align: center;
     text-decoration: none;
-    display: inline-block;
-    font-size: 16px;
-    margin: 4px 2px;
-    cursor: pointer;
-}
-
-.button:hover {
-    background-color: #3e8e41;
-}
-
-.form-group {
-    margin-bottom: 15px;
-}
-
-.form-label {
-    display: block;
-    margin-bottom: 5px;
-}
-
-.form-input {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-.table {
-    width: 100%;
-    border-collapse: collapse
-}
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-primary:hover {
+    background-color: #4cae4c;
+  }
+  
