@@ -3,6 +3,8 @@ from . models import Client, Project, Task
 from django.contrib.auth.decorators import login_required, permission_required
 from .forms import ClientForm, ProjectForm, TaskForm, CSVUploadForm
 from django.contrib import messages
+from django.core.cache import cache
+from django.views.decorators.cache import cache_page
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login, logout
 from django.contrib.auth.forms import UserCreationForm
@@ -42,6 +44,7 @@ def project_list(request):
     return render(request, 'project_list.html', context)
 
 @login_required
+@cache_page(60 * 15)  # Cache for 15 minutes
 def project_detail(request, pk):
     project = Project.objects.get(pk=pk)
     tasks = Task.objects.filter(project=project)
@@ -96,12 +99,20 @@ def project_delete(request, pk):
 
 @login_required
 def task_list(request, project_id=None):
+    cache_key = f"task_list_{project_id}" if project_id else "task_list_all"
+    tasks = cache.get(cache_key)
+    if not tasks:
+        if project_id:
+            tasks = Task.objects.filter(project_id=project_id).select_related('project')
+        else:
+            tasks = Task.objects.all().select_related('project')
+        cache.set(cache_key, tasks, timeout=60*15)
+
     if project_id:
-        tasks = Task.objects.filter(project_id=project_id)
+
         project =get_object_or_404(Project, pk=project_id)
         context = {'tasks': tasks, 'project': project}
     else:
-        tasks = Task.objects.all()
         projects = Project.objects.prefetch_related('tasks').all()
    
         context = {'projects': projects}
@@ -125,9 +136,11 @@ def task_create(request):
             task = form.save(commit=False)
             if request.user.has_perm('pmis.can_assign_task_to_client', task.assigned_to):
                 task.save()
+                cache.delete(f"task_list_{task.project.id}")
+                cache.delete("task_list_all")
                 return redirect('task_list', project_id=task.project.id)
             else:
-                messages.error(redirect, "You do not have permissions to assign tasks.")
+                messages.error(request, "You do not have permissions to assign tasks.")
                 return redirect('task_list')
     else:
         form = TaskForm()
@@ -135,21 +148,27 @@ def task_create(request):
     return render(request, 'task_create.html', context)
 
 @login_required
-@permission_required('pmis.can_assign_task', raise_exception=True)
 def task_update(request, task_id):
     task = get_object_or_404(Task, pk=task_id)
     project = task.project
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
-            if request.user.has_perm('pmis.can_assign_task_to_client', task.assigned_to):
-                form.save()
-                return JsonResponse({'success': True, 'message': 'Task updated successfully.', 'project_id': task.project.id})
-                #return redirect('task_list', project_id=task.project.id)
-            else:
-                return JsonResponse({'success': False, 'message': 'You do not have permissions to assign tasks.'})
-                # messages.error(request, "you dont have permissions to assign tasks.")
-                # return redirect('task_update', task_id=task.pk)
+            form.save()
+            cache_key = f"task_list_{task.project.pk}"
+            cache.delete(cache_key)
+            cache.delete("task_list_all")
+            return JsonResponse({
+                "success": True,
+                "message": "Task updated successfully.",
+                "project_id": task.project.pk
+            })
+        else:
+            logger.error(f"Form errors: {form.errors}")
+            return JsonResponse({
+                "success": False,
+                "errors": form.errors
+            }, status=400)
     else:
         form = TaskForm(instance=task)
     context = {'form': form, 'task': task, 'project': project}
@@ -158,10 +177,12 @@ def task_update(request, task_id):
 @login_required
 def task_delete(request, task_id):
     task = get_object_or_404(Task, pk=task_id)
-     
+
     if request.method == 'POST':
-        project_id = task.project.id
+        project_id = task.project.pk
         task.delete()
+        cache.delete(f"task_list_{project_id}")
+        cache.delete("task_list_all")
         return redirect('task_list', project_id=project_id)
     context = {'task': task}
     return render(request, 'task_delete.html', context)
@@ -217,18 +238,18 @@ def upload_tasks_csv(request):
 
                     continue
 
+            cache.delete("task_list_all")
+            if first_project_id:
+                cache.delete(f"task_list_{first_project_id}")
+
             messages.success(request, "Tasks have been uploaded successfully.")
-            logger.exception("Tasks have been uploaded successfully.")
+            logger.info("Tasks have been uploaded successfully.")
             if first_project_id:
                 return redirect(f'/project/{first_project_id}/tasks/')
             else:
-
                 return redirect('task_list')
     else:
         form = CSVUploadForm()
-
-    return redirect(request, 'task_list', {'form', form} )
-
-
-
-
+    
+    # Corrected: redirect does not take context, and GET requests should usually return a template
+    return render(request, 'task_list.html', {'form': form})

@@ -11,3 +11,4 @@ Thumbs.db
 /env
 .venv
 __pycache__
+commands.md

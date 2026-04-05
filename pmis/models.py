@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User, Permission, AbstractUser, Group
+from django.urls import reverse
 
 
 # Create your models here.
@@ -61,6 +62,9 @@ class Task(models.Model):
 
     def get_status_display(self):
         return dict(self.STATUS)[self.status]
+    
+    def get_absolute_url(self):
+        return reverse('task_detail', args=[str(self.pk)])
 
 
 
