@@ -4,10 +4,41 @@
 <link rel="stylesheet" href="{% static 'css/style.css' %}">
 
 <div class="container">
-    {% if projects %}
-        {# Display all projects if 'projects' is provided in the context #}
-        
-        {% for project in projects %}
+    <form method="get" class="row g-2 align-items-end mb-4">
+        <div class="col-md-6">
+            <label for="task-filter-q" class="form-label">Search tasks</label>
+            <input
+                id="task-filter-q"
+                type="text"
+                name="q"
+                value="{{ q }}"
+                class="form-control"
+                placeholder="Task, project, or assignee"
+            >
+        </div>
+        <div class="col-md-3">
+            <label for="task-filter-status" class="form-label">Status</label>
+            <select id="task-filter-status" name="status" class="form-select">
+                <option value="">All statuses</option>
+                {% for status_value, status_label in status_choices %}
+                    <option value="{{ status_value }}" {% if status == status_value|stringformat:"s" %}selected{% endif %}>
+                        {{ status_label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            {% if project %}
+                <a href="{% url 'task_list' project.id %}" class="btn btn-outline-secondary">Clear</a>
+            {% else %}
+                <a href="{% url 'task_list' %}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if project_task_groups %}
+        {% for project, tasks in project_task_groups %}
             <a href="{% url 'project_detail' project.id %}" class="text-center" style="background-color: rgb(198, 217, 235); padding: 10px; border-radius: 5px; border-radius: 5px;font-style: inherit;">Scope of work in {{ project.name }}</a>
             <table class="table table-striped">
                 <thead>
@@ -23,7 +54,7 @@
 
                 </thead>
                 <tbody>
-                    {% for task in project.tasks.all %}
+                    {% for task in tasks %}
                         <tr>
                             <td> 
                                 <a href="{% url 'task_detail' task.id %}" style="color: blue;"><b></b>{{ task.name }}</a>
@@ -47,11 +78,10 @@
             </table>
             
         {% empty %}
-            <p>No projects found.</p>
+            <p>No tasks matched the current filters.</p>
         {% endfor %}
     {% elif tasks %}
-        {# Display tasks for a specific project if 'tasks' is provided #}
-        <h2>Tasks for: {{ project.name }}</h2> {# Display project name #}
+        <h2>Tasks for: {{ project.name }}</h2>
         <table class="table table-striped">
             <thead>
                 <tr>
@@ -86,7 +116,7 @@
             </tbody>
         </table>
     {% else %}
-        <p>No projects or tasks found.</p>
+        <p>No tasks matched the current filters.</p>
     {% endif %}
     <a href="{% url 'task_create' %}" class="btn btn-primary" style="background-color: yellowgreen; margin: 5px;">+ Add New Task</a>
 </div>

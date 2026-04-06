@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from . models import Client, Project, Task
+from django.db.models import Prefetch
 from django.contrib.auth.decorators import login_required, permission_required
 from .forms import ClientForm, ProjectForm, TaskForm, CSVUploadForm
 from django.contrib import messages
@@ -11,10 +12,22 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.http import JsonResponse
+from django.db.models import Q
 import csv
 from datetime import datetime
 import logging
+from collections import OrderedDict
 logger = logging.getLogger(__name__)
+
+
+TASK_LIST_CACHE_TIMEOUT = 60 * 15
+
+
+def _invalidate_task_list_cache(*project_ids):
+    cache.delete("task_list_all_projects")
+    for project_id in project_ids:
+        if project_id:
+            cache.delete(f"task_list_project_{project_id}")
 
 
 def index(request):
@@ -99,23 +112,51 @@ def project_delete(request, pk):
 
 @login_required
 def task_list(request, project_id=None):
-    cache_key = f"task_list_{project_id}" if project_id else "task_list_all"
-    tasks = cache.get(cache_key)
-    if not tasks:
+    query = request.GET.get('q', '').strip()
+    status = request.GET.get('status', '').strip()
+    filters_active = bool(query or status)
+
+    if filters_active:
+        tasks = Task.objects.select_related('project', 'assigned_to__user')
         if project_id:
-            tasks = Task.objects.filter(project_id=project_id).select_related('project')
-        else:
-            tasks = Task.objects.all().select_related('project')
-        cache.set(cache_key, tasks, timeout=60*15)
+            tasks = tasks.filter(project_id=project_id)
+    else:
+        cache_key = f"task_list_{project_id}" if project_id else "task_list_all"
+        tasks = cache.get(cache_key)
+        if not tasks:
+            if project_id:
+                tasks = Task.objects.filter(project_id=project_id).select_related('project', 'assigned_to__user')
+            else:
+                tasks = Task.objects.all().select_related('project', 'assigned_to__user')
+            cache.set(cache_key, tasks, timeout=60*15)
+
+    if query:
+        tasks = tasks.filter(
+            Q(name__icontains=query) |
+            Q(project__name__icontains=query) |
+            Q(assigned_to__user__username__icontains=query)
+        )
+
+    if status in {str(choice[0]) for choice in Task.STATUS}:
+        tasks = tasks.filter(status=int(status))
+
+    tasks = tasks.order_by('project__name', 'task_end_date', 'name')
+
+    filter_context = {
+        'q': query,
+        'status': status,
+        'status_choices': Task.STATUS,
+    }
 
     if project_id:
-
-        project =get_object_or_404(Project, pk=project_id)
-        context = {'tasks': tasks, 'project': project}
+        project = get_object_or_404(Project, pk=project_id)
+        context = {'tasks': tasks, 'project': project, **filter_context}
     else:
-        projects = Project.objects.prefetch_related('tasks').all()
-   
-        context = {'projects': projects}
+        project_task_groups = OrderedDict()
+        for task in tasks:
+            project_task_groups.setdefault(task.project, []).append(task)
+
+        context = {'project_task_groups': project_task_groups.items(), **filter_context}
     return render(request, 'task_list.html', context)
 
 @login_required
@@ -136,8 +177,8 @@ def task_create(request):
             task = form.save(commit=False)
             if request.user.has_perm('pmis.can_assign_task_to_client', task.assigned_to):
                 task.save()
-                cache.delete(f"task_list_{task.project.id}")
-                cache.delete("task_list_all")
+                cache.delete(f"task_list_project_{task.project.id}")
+                cache.delete("task_list_all_projects")
                 return redirect('task_list', project_id=task.project.id)
             else:
                 messages.error(request, "You do not have permissions to assign tasks.")
@@ -152,12 +193,13 @@ def task_update(request, task_id):
     task = get_object_or_404(Task, pk=task_id)
     project = task.project
     if request.method == 'POST':
+        previous_project_id = task.project.pk
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             form.save()
-            cache_key = f"task_list_{task.project.pk}"
+            cache_key = f"task_list_project_{task.project.pk}"
             cache.delete(cache_key)
-            cache.delete("task_list_all")
+            cache.delete("task_list_all_projects")
             return JsonResponse({
                 "success": True,
                 "message": "Task updated successfully.",
@@ -181,8 +223,8 @@ def task_delete(request, task_id):
     if request.method == 'POST':
         project_id = task.project.pk
         task.delete()
-        cache.delete(f"task_list_{project_id}")
-        cache.delete("task_list_all")
+        cache.delete(f"task_list_project_{project_id}")
+        cache.delete("task_list_all_projects")
         return redirect('task_list', project_id=project_id)
     context = {'task': task}
     return render(request, 'task_delete.html', context)
@@ -207,7 +249,7 @@ def upload_tasks_csv(request):
             reader = csv.reader(file_data)
             next(reader)  # Skip header
 
-            first_project_id = None
+            touched_project_ids = set()
 
             for row in reader:
                 try:
@@ -216,8 +258,7 @@ def upload_tasks_csv(request):
 
                     project = Project.objects.get(id=int(project_id))
 
-                    if first_project_id is None:
-                        first_project_id = int(project_id)
+                    touched_project_ids.add(int(project_id))
 
                     task = Task.objects.create(
                         name=task_name,
@@ -238,16 +279,17 @@ def upload_tasks_csv(request):
 
                     continue
 
-            cache.delete("task_list_all")
-            if first_project_id:
-                cache.delete(f"task_list_{first_project_id}")
+            cache.delete("task_list_all_projects")
+            if touched_project_ids:
+                first_project_id = sorted(touched_project_ids)[0]
+                cache.delete(f"task_list_project_{first_project_id}")
 
             messages.success(request, "Tasks have been uploaded successfully.")
             logger.info("Tasks have been uploaded successfully.")
-            if first_project_id:
+            if touched_project_ids:
+                first_project_id = sorted(touched_project_ids)[0]
                 return redirect(f'/project/{first_project_id}/tasks/')
-            else:
-                return redirect('task_list')
+            return redirect('task_list')
     else:
         form = CSVUploadForm()
     

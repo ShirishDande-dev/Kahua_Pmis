@@ -106,16 +106,29 @@ DATABASES = {
     }
 }
 
-CACHES = {
-    "default":{
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "kahua"
+# Cache backend: default to local memory for development.
+# Enable Memcached explicitly in environments where the service is available.
+MEMCACHED_LOCATION = os.getenv("MEMCACHED_LOCATION", "127.0.0.1:11211")
+USE_MEMCACHED = os.getenv("USE_MEMCACHED", "false").lower() in {"1", "true", "yes"}
+
+if USE_MEMCACHED:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.memcached.PyMemcacheCache",
+            "LOCATION": MEMCACHED_LOCATION,
+            "KEY_PREFIX": "kahua",
+            "TIMEOUT": 60 * 15,
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "kahua-local-cache",
+            "KEY_PREFIX": "kahua",
+            "TIMEOUT": 60 * 15,
+        }
+    }
 
 
 # Password validation

@@ -64,3 +64,5 @@ vine==5.1.0
 virtualenv==20.25.0
 wcwidth==0.1.9
 pytest-django==4.9.0
+
+pymemcache==4.0.0
